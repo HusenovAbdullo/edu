@@ -18,9 +18,19 @@
         </aside>
 
         <div class="quiz-content">
-            <div class="question-mark" @click="openTelegram" style="cursor: pointer;">
-                Dasturchi: Husenov Abdullo
+            <div class="question-mark" style="cursor: default;">
+                Dasturchilar:
+                <span class="developer" @click="openTelegram('https://t.me/chiko_uz')"
+                    style="cursor: pointer; color: #6b476d; text-decoration: underline;">
+                    Husenov Abdullo
+                </span>
+                &nbsp;&nbsp;
+                <span class="developer" @click="openTelegram('https://t.me/firuzovic')"
+                    style="cursor: pointer; color: #6b476d; text-decoration: underline;">
+                    Xalimov Shoxijaxon
+                </span>
             </div>
+
 
             <div class="logo"></div>
 
@@ -97,12 +107,12 @@ export default {
         }
     },
     methods: {
-        openTelegram() {
-            window.open("https://t.me/chiko_uz", "_blank");
+        openTelegram(url) {
+            window.open(url, '_blank');
         },
         async fetchQuestions() {
             try {
-                const response = await axios.get("http://10.100.0.15/api/v1/random-tests/");
+                const response = await axios.get("https://edu.pochta.uz/api/v1/random-tests/");
                 this.displayedQuestions = response.data.map(q => ({
                     text: q.question,
                     options: q.answers.map(a => a.answer),
@@ -182,7 +192,7 @@ export default {
 
             this.showResultPopup = true;
             try {
-                await axios.post("http://10.100.0.15/api/v1/test-results/", {
+                await axios.post("https://edu.pochta.uz/api/v1/test-results/", {
                     fish: this.username,
                     correct_answers: score,
                     incorrect_answers: totalQuestions - score,
@@ -205,6 +215,14 @@ export default {
 
 
 <style scoped>
+@media (max-width: 768px) {
+    .question-mark {
+        font-size: 14px;
+        /* Bu o'lchamni o'zingizga moslab o'zgartiring */
+    }
+}
+
+
 .logo {
     width: 200px;
     /* Logoning o‘lchamini o'zingizga moslang */
@@ -511,5 +529,12 @@ export default {
     margin: 5px 0;
     padding: 8px;
     border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+    .question-mark {
+        font-size: 14px;
+        /* Bu o'lchamni o'zingizga moslab o'zgartiring */
+    }
 }
 </style>
