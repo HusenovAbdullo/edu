@@ -1,10 +1,19 @@
 <template>
     <div class="quiz-wrapper">
+        <!-- Test boshlanish popup -->
         <div v-if="showPopup" class="popup">
             <div class="popup-content">
                 <h2>Ismingizni kiriting</h2>
                 <input v-model="username" placeholder="Ismingizni kiriting" />
                 <button @click="startTest">Testni boshlash</button>
+            </div>
+        </div>
+
+        <!-- Penalty overlay: agar foydalanuvchi test vaqtida boshqa oynaga o'tib qaytsa -->
+        <div v-if="penaltyActive" class="penalty-overlay">
+            <div class="penalty-message">
+                Diqqat! Test davomida boshqa oynaga o'tdingiz.<br>
+                Iltimos, {{ penaltyCountdown }} sekund kuting...
             </div>
         </div>
 
@@ -17,7 +26,7 @@
             </div>
         </aside>
 
-        <div class="quiz-content">
+        <div class="quiz-content" :class="{ disabled: penaltyActive }">
             <div class="question-mark" style="cursor: default;">
                 Dasturchilar:
                 <span class="developer" @click="openTelegram('https://t.me/chiko_uz')"
@@ -31,13 +40,19 @@
                 </span>
             </div>
 
-
             <div class="logo"></div>
 
-            <div class="timer" style="color: aliceblue; float: right;">Qolgan vaqt: {{ formattedTime }}</div> <br><br>
-            <div class="ism" style="color: aliceblue; float: right;">Foydalanuvchi: {{ username }}&nbsp;&nbsp;</div>
-            <br><br>
-            <h2 class="question-text" style="color: #ffff;">{{ displayedQuestions[currentQuestionIndex].text }}</h2>
+            <div class="timer" style="color: aliceblue; float: right;">
+                Qolgan vaqt: {{ formattedTime }}
+            </div>
+            <br /><br />
+            <div class="ism" style="color: aliceblue; float: right;">
+                Foydalanuvchi: {{ username }}&nbsp;&nbsp;
+            </div>
+            <br /><br />
+            <h2 class="question-text" style="color: #ffff;">
+                {{ displayedQuestions[currentQuestionIndex].text }}
+            </h2>
 
             <div class="options">
                 <div v-for="(option, i) in displayedQuestions[currentQuestionIndex].options" :key="i" class="option"
@@ -54,20 +69,30 @@
             <div v-if="showResultPopup" class="result-popup">
                 <div class="popup-content">
                     <h2>Test natijalari</h2>
-                    <p><strong>Foydalanuvchi:</strong> {{ testResult.username }}</p>
-                    <p><strong>To‘g‘ri javoblar:</strong> {{ testResult.score }} / {{ testResult.total }}</p>
-                    <p><strong>Foiz:</strong> {{ testResult.percentage }}%</p>
+                    <p>
+                        <strong>Foydalanuvchi:</strong> {{ testResult.username }}
+                    </p>
+                    <p>
+                        <strong>To‘g‘ri javoblar:</strong>
+                        {{ testResult.score }} / {{ testResult.total }}
+                    </p>
+                    <p>
+                        <strong>Foiz:</strong> {{ testResult.percentage }}%
+                    </p>
                     <button @click="closeResultPopup">Yopish</button>
-
                 </div>
             </div>
 
-
             <div class="quiz-footer">
-                <button v-if="!isLastQuestion" @click="nextQuestion">Keyingisi</button>
+                <button v-if="!isLastQuestion" @click="nextQuestion">
+                    Keyingisi
+                </button>
                 <button v-else @click="submitTest">Yakunlash</button>
             </div>
         </div>
+
+        <!-- Audio element: ovoz chiqishi uchun -->
+        <audio ref="penaltySound" src="https://www.soundjay.com/button/beep-07.wav" loop preload="auto"></audio>
     </div>
 </template>
 
@@ -82,19 +107,32 @@ export default {
             currentQuestionIndex: 0,
             displayedQuestions: [],
             answers: [],
-            timeLeft: 3600,
+            timeLeft: 1800,
             timer: null,
             showResultPopup: false,
             testResult: null,
             startTime: null, // Test boshlanish vaqti
+            penaltyActive: false,
+            penaltyCountdown: 10,
+            penaltyInterval: null,
+            keyboardDisabled: false, // Klaviaturani bloklash flagi
         };
     },
     created() {
         this.fetchQuestions();
         window.addEventListener("beforeunload", this.preventRefresh);
     },
+    mounted() {
+        // Kerakli hodisalarni faqat bir marta qo'shamiz:
+        document.addEventListener("visibilitychange", this.handleVisibilityChange);
+        document.addEventListener("fullscreenchange", this.handleFullScreenChange);
+        document.addEventListener("keydown", this.disableKeyboard, true);
+    },
     beforeUnmount() {
         window.removeEventListener("beforeunload", this.preventRefresh);
+        document.removeEventListener("visibilitychange", this.handleVisibilityChange);
+        document.removeEventListener("fullscreenchange", this.handleFullScreenChange);
+        document.removeEventListener("keydown", this.disableKeyboard, true);
     },
     computed: {
         isLastQuestion() {
@@ -104,24 +142,32 @@ export default {
             const minutes = Math.floor(this.timeLeft / 60);
             const seconds = this.timeLeft % 60;
             return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
-        }
+        },
     },
     methods: {
         openTelegram(url) {
-            window.open(url, '_blank');
+            window.open(url, "_blank");
         },
         async fetchQuestions() {
             try {
                 const response = await axios.get("https://edu.pochta.uz/api/v1/random-tests/");
-                this.displayedQuestions = response.data.map(q => ({
+                let questions = response.data.map((q) => ({
                     text: q.question,
-                    options: q.answers.map(a => a.answer),
-                    correct: q.answers.find(a => a.is_correct)?.answer
+                    options: this.shuffleArray(q.answers.map((a) => a.answer)),
+                    correct: q.answers.find((a) => a.is_correct)?.answer,
                 }));
+                this.displayedQuestions = this.shuffleArray(questions);
             } catch (error) {
                 console.error("Testlarni olishda xatolik:", error);
                 alert("Testlarni yuklashda xatolik yuz berdi");
             }
+        },
+        shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
         },
         preventRefresh(event) {
             event.preventDefault();
@@ -135,6 +181,8 @@ export default {
             this.timeLeft = 3600;
             this.showPopup = true;
             this.fetchQuestions();
+            // Test tugagach, klaviaturani qayta yoqamiz:
+            this.keyboardDisabled = false;
         },
         getOptionLetter(index) {
             return String.fromCharCode(65 + index);
@@ -147,14 +195,48 @@ export default {
         goToQuestion(index) {
             this.currentQuestionIndex = index;
         },
+        requestFullScreen() {
+            const element = document.documentElement;
+            if (element.requestFullscreen) {
+                element.requestFullscreen();
+            } else if (element.mozRequestFullScreen) {
+                element.mozRequestFullScreen();
+            } else if (element.webkitRequestFullscreen) {
+                element.webkitRequestFullscreen();
+            } else if (element.msRequestFullscreen) {
+                element.msRequestFullscreen();
+            }
+        },
+        handleFullScreenChange() {
+            if (!document.fullscreenElement && !this.showPopup && !this.showResultPopup) {
+                console.log("Iltimos, fullscreen rejimga qayting.");
+            }
+        },
         startTest() {
             if (!this.username) {
                 alert("Ismingizni kiriting!");
                 return;
             }
+            // Full-screen va audio priming
+            this.requestFullScreen();
+            if (this.$refs.penaltySound) {
+                this.$refs.penaltySound.muted = true;
+                this.$refs.penaltySound.play().catch((err) =>
+                    console.error("Audio priming error:", err)
+                );
+            }
+            // Test boshlangandan keyin klaviaturani bloklaymiz:
+            this.keyboardDisabled = true;
             this.showPopup = false;
-            this.startTime = Date.now(); // Boshlanish vaqtini saqlab qo'yamiz
+            this.startTime = Date.now();
             this.startTimer();
+        },
+        disableKeyboard(event) {
+            if (this.keyboardDisabled) {
+                event.preventDefault();
+                event.stopPropagation();
+                event.stopImmediatePropagation();
+            }
         },
         startTimer() {
             this.timer = setInterval(() => {
@@ -180,14 +262,15 @@ export default {
             let elapsedTimeInSeconds = Math.floor((Date.now() - this.startTime) / 1000);
             let elapsedMinutes = Math.floor(elapsedTimeInSeconds / 60);
             let elapsedSeconds = elapsedTimeInSeconds % 60;
-            let elapsedTimeFormatted = `${elapsedMinutes}:${elapsedSeconds < 10 ? "0" : ""}${elapsedSeconds}`;
+            let elapsedTimeFormatted = `${elapsedMinutes}:${elapsedSeconds < 10 ? "0" : ""
+                }${elapsedSeconds}`;
 
             this.testResult = {
                 username: this.username,
                 score: score,
                 total: totalQuestions,
                 percentage: percentage,
-                time: elapsedTimeFormatted
+                time: elapsedTimeFormatted,
             };
 
             this.showResultPopup = true;
@@ -197,16 +280,48 @@ export default {
                     correct_answers: score,
                     incorrect_answers: totalQuestions - score,
                     percentage: parseFloat(percentage),
-                    time: elapsedTimeFormatted // Yuboriladigan vaqt
+                    time: elapsedTimeFormatted,
                 });
             } catch (error) {
                 console.error("Natijalarni yuborishda xatolik:", error);
                 alert("Natijalarni yuborishda xatolik yuz berdi");
             }
-        }
+        },
+        // Foydalanuvchi boshqa oynaga o'tib, qaytganda penalty ishga tushadi:
+        handleVisibilityChange() {
+            if (!document.hidden && !this.showPopup && !this.showResultPopup) {
+                this.triggerPenalty();
+            }
+        },
+        triggerPenalty() {
+            if (this.penaltyActive) return;
 
+            this.penaltyActive = true;
+            this.penaltyCountdown = 10;
 
-    }
+            // Ovozni yoqish:
+            if (this.$refs.penaltySound) {
+                this.$refs.penaltySound.muted = false;
+                this.$refs.penaltySound.currentTime = 0;
+                this.$refs.penaltySound.play().catch((err) =>
+                    console.error("Audio play error:", err)
+                );
+            }
+
+            // 10 sekundlik hisoblagich:
+            this.penaltyInterval = setInterval(() => {
+                this.penaltyCountdown--;
+                if (this.penaltyCountdown <= 0) {
+                    clearInterval(this.penaltyInterval);
+                    this.penaltyActive = false;
+                    if (this.$refs.penaltySound) {
+                        this.$refs.penaltySound.pause();
+                        this.$refs.penaltySound.currentTime = 0;
+                    }
+                }
+            }, 1000);
+        },
+    },
 };
 </script>
 
@@ -214,7 +329,31 @@ export default {
 
 
 
+
 <style scoped>
+.penalty-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(255, 0, 0, 0.9);
+    /* Qizil rang */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    color: #fff;
+    font-size: 1.5em;
+    text-align: center;
+}
+
+/* Test kontenti jazov holatda interaktiv bo'lmasligi uchun */
+.quiz-content.disabled {
+    pointer-events: none;
+    opacity: 0.5;
+}
+
 @media (max-width: 768px) {
     .question-mark {
         font-size: 14px;
